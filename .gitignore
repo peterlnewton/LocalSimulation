@@ -2,3 +2,6 @@
 Binaries/*
 Saved/*
 Intermediate/*
+*.sln
+Plugins/LocalPhysics/Intermediate/*
+Plugins/LocalPhysics/Binaries/*
