@@ -56,7 +56,7 @@ ALocalSimulationVolume::~ALocalSimulationVolume()
 	{
 		auto temp = data;
 
-		//LocalSimulation->RemoveJoint(temp->JointHandle);
+		//todo: LocalSimulation->RemoveJoint(temp->JointHandle);
 
 		delete temp;
 	}
@@ -158,7 +158,7 @@ void ALocalSimulationVolume::TransformUpdated(USceneComponent* InRootComponent, 
 			{
 				if(MeshData != nullptr)
 				{
-					// Dereference pointers to pointers (Key) iterator
+					// create easy reference for later
 					LocalPhysics::FActorHandle* Handle = MeshData->InHandle;
 
 					// Kinematic update for our physics in 'local' space
@@ -226,6 +226,7 @@ bool ALocalSimulationVolume::AddStaticMeshToSimulation(UStaticMeshComponent* Mes
 		{
 		case LocalPhysicsBodyType::Kinematic:
 			// we are going to listen for transform updates from SetComponentTransform (from the original owner)
+			// I want to say this is still necessary for any updates we get in-between this Actors tick cycle.
 			Mesh->TransformUpdated.AddUObject(this, &ALocalSimulationVolume::TransformUpdated);
 			KinematicActive++;
 			NewMeshData->InHandle = LocalSimulation->CreateKinematicActor(BodyInstance.GetPxRigidBody_AssumesLocked(), BodyTransform);
@@ -313,7 +314,7 @@ void ALocalSimulationVolume::DeferredRemoval()
 
 			Joint->Bodies.Empty();
 
-			//delete Joint->JointHandle;
+			//todo: delete Joint->JointHandle;
 			Joint->JointHandle = nullptr;
 
 			JointsActive--;
