@@ -17,11 +17,12 @@ namespace LocalPhysics
 	struct FActorHandle;
 	struct FJointHandle;
 
-	enum LocalPhysicsBodyType
+	enum class ELocalPhysicsBodyType
 	{
-		Static,
-		Kinematic,
-		Dynamic
+		None		= 0x00,
+		Static		= 0x01,
+		Kinematic	= 0x02,
+		Dynamic		= 0x04
 	};
 
 	struct LOCALPHYSICS_API LocalPhysicData // pass visual, physics, and simulation
@@ -30,8 +31,8 @@ namespace LocalPhysics
 		UStaticMeshComponent* InVisualMesh;
 		UStaticMeshComponent* InPhysicsMesh;
 		LocalPhysics::FActorHandle* InHandle;
-		LocalPhysicsBodyType InBodyType;
-		LocalPhysicData(LocalPhysics::FLocalSimulation& InSimulation, UStaticMeshComponent* Visual, UStaticMeshComponent* Physics, LocalPhysics::FActorHandle* Handle, LocalPhysicsBodyType BodyType)
+		ELocalPhysicsBodyType InBodyType;
+		LocalPhysicData(LocalPhysics::FLocalSimulation& InSimulation, UStaticMeshComponent* Visual, UStaticMeshComponent* Physics, LocalPhysics::FActorHandle* Handle, ELocalPhysicsBodyType BodyType)
 		: OwningSimulation(InSimulation), InVisualMesh(Visual), InPhysicsMesh(Physics), InHandle(Handle), InBodyType(BodyType)
 		{}
 	};
@@ -41,9 +42,9 @@ namespace LocalPhysics
 		LocalPhysics::FLocalSimulation& OwningSimulation;
 		TArray<LocalPhysics::LocalPhysicData*> Bodies;
 		LocalPhysics::FJointHandle* JointHandle;
-		LocalPhysicsBodyType BodyTypeOne;
-		LocalPhysicsBodyType BodyTypeTwo;
-		LocalPhysicJointData(LocalPhysics::FLocalSimulation& InSimulation, TArray<LocalPhysics::LocalPhysicData*> NewBodies, LocalPhysics::FJointHandle* Joint, LocalPhysicsBodyType BodyTypeOne, LocalPhysicsBodyType BodyTypeTwo)
+		ELocalPhysicsBodyType BodyTypeOne;
+		ELocalPhysicsBodyType BodyTypeTwo;
+		LocalPhysicJointData(LocalPhysics::FLocalSimulation& InSimulation, TArray<LocalPhysics::LocalPhysicData*> NewBodies, LocalPhysics::FJointHandle* Joint, ELocalPhysicsBodyType BodyTypeOne, ELocalPhysicsBodyType BodyTypeTwo)
 		: OwningSimulation(InSimulation), Bodies(NewBodies), JointHandle(Joint), BodyTypeOne(BodyTypeOne), BodyTypeTwo(BodyTypeTwo)
 		{}
 	};
@@ -77,6 +78,7 @@ private:
 	LocalPhysics::LocalPhysicData* GetDataForStaticMesh(UStaticMeshComponent* Mesh) const;
 	LocalPhysics::LocalPhysicJointData* GetDataForJoint(UStaticMeshComponent* MeshOne, UStaticMeshComponent* MeshTwo) const;
 
+	void Update(FPhysScene* PhysScene, uint32 SceneType, float DeltaTime);
 	void TransformUpdated(USceneComponent* InRootComponent, EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport);
 
 public:	
@@ -93,7 +95,7 @@ public:
 	
 	// Check whether this mesh is associated with this space.
 	UFUNCTION(BlueprintCallable, Category = "Local Simulation")
-	bool InSimulation(UStaticMeshComponent* Mesh) const;
+	bool IsInSimulation(UStaticMeshComponent* Mesh) const;
 
 	// Check whether this mesh is associated with this space.
 	UFUNCTION(BlueprintCallable, Category = "Local Simulation")
@@ -141,11 +143,11 @@ public:
 
 	// Show volumes which represnt objects in 'local' space
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Local Simulation")
-		bool showDebugLocalPhysics = false;
+		bool bShowDebugPhyics = false;
 
 	// Should the velocity from the previous space be converted to the new space. (Affects Adding & Removing)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Local Simulation")
-		bool convertVelocity = true;
+		bool bConvertVelocity = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Local Simulation")
 		FColor DebugSimulatedColor = FColor::Red;
