@@ -81,31 +81,107 @@ ALocalSimulationVolume::~ALocalSimulationVolume()
 void ALocalSimulationVolume::BeginPlay()
 {
 	Super::BeginPlay();	
+	// register component on begin
 	LocalSpace->RegisterComponent();
+	// get PhysScene, and bind our function to its SceneStep delegate
 	auto pScene = GetWorld()->GetPhysicsScene();
-	pScene->OnPhysSceneStep.AddUObject(this, &ALocalSimulationVolume::Update);
+	OnPhysSceneStepHandle = pScene->OnPhysSceneStep.AddUObject(this, &ALocalSimulationVolume::Update);
 }
 
-void ALocalSimulationVolume::Update(FPhysScene* PhysScene, uint32 SceneType, float DeltaTime)
+void ALocalSimulationVolume::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (SceneType != 0)
-		return;
-	// do any early tick removals
-	DeferredRemoval();
-	// todo: update state of dynamic/static objects - i.e. turning on physics or change of mobility will move an static actor to dynamic.
-	// simulate
-	if (LocalSimulation && LocalSimulation->ShouldSimulate())
+	// get PhysScene, and remove our function from SceneStep delegate
+	auto pScene = GetWorld()->GetPhysicsScene();
+	if (pScene)
 	{
-		LocalSimulation->Simulate(DeltaTime, LocalRotation.RotateVector(LocalSpace->ComponentToWorld.GetRotation().UnrotateVector(Gravity)));
+		pScene->OnPhysSceneStep.Remove(OnPhysSceneStepHandle);
 	}
-	// poll updates to visuals
-	PollPhysicsUpdate();
 }
-
 
 /*
 * Transform Updates
 */
+
+void ALocalSimulationVolume::DeferredRemoval()
+{
+	if (bDeferRemovalOfBodies)
+	{
+		for (LocalPhysicJointData* Joint : JointsToRemove)
+		{
+			LocalPhysicJointData* data = Joint;
+
+			LocalSimulation->RemoveJoint(data->JointHandle);
+
+			Joint->Bodies.Empty();
+
+			//todo: delete Joint->JointHandle;
+			Joint->JointHandle = nullptr;
+
+			JointBodies--;
+		}
+
+		for (LocalPhysicData* data : MeshDataToRemove)
+		{
+			// create pointers to mesh/handle for use later
+			LocalPhysicData* temp = data;
+
+			// visual mesh which we want to restore to
+			UStaticMeshComponent* mesh = temp->InVisualMesh;
+
+			// prep for reference of handle
+			LocalPhysics::FActorHandle* Handle = temp->InHandle;
+
+			// create copy of new position in world
+			const FTransform BodyTransform = Handle->GetWorldTransform() * LocalSpace->ComponentToWorld;
+
+			// store pointer to bodyinstance for later
+			FBodyInstance* BodyInstance = mesh->GetBodyInstance();
+
+			// If we are null, no doppel created. let's initialize body back in world
+			if (temp->InPhysicsMesh == nullptr)
+			{
+				BodyInstance->TermBody();
+				BodyInstance->InitBody(mesh->GetBodySetup(), BodyTransform, mesh, GetWorld()->GetPhysicsScene());
+			}
+
+			switch (temp->InBodyType)
+			{
+			case ELocalPhysicsBodyType::Static:
+				temp->InVisualMesh->SetMobility(EComponentMobility::Static);
+				StaticBodies--;
+				break;
+			case ELocalPhysicsBodyType::Kinematic:
+				temp->InVisualMesh->SetMobility(EComponentMobility::Movable);
+				KinematicBodies--;
+				break;
+			case ELocalPhysicsBodyType::Dynamic:
+
+				// preserve linear / angular velocity for 'local' simulating mesh, and convert it to 'world' space
+				FVector LinearVelocity = LocalSpace->ComponentToWorld.GetRotation().RotateVector(LocalRotation.UnrotateVector(Handle->GetLinearVelocity()));
+				FVector AngularVelocity = LocalSpace->ComponentToWorld.GetRotation().RotateVector(LocalRotation.UnrotateVector(Handle->GetAngularVelocity()));
+
+
+				mesh->SetMobility(EComponentMobility::Movable);
+				mesh->SetSimulatePhysics(true);
+				// restore linear / angular velocity
+				if (bConvertVelocity)
+				{
+					mesh->SetPhysicsLinearVelocity(LinearVelocity);
+					mesh->SetPhysicsAngularVelocity(AngularVelocity);
+				}
+				DynamicBodies--;
+				break;
+			}
+			LocalSimulation->RemoveActor(Handle);
+			SimulatedActors.Remove(data);
+			delete temp;
+		}
+		// no matter what, clear until new request
+		MeshDataToRemove.Empty();
+		JointsToRemove.Empty();
+		bDeferRemovalOfBodies = false;
+	}
+}
 
 void ALocalSimulationVolume::PollPhysicsUpdate()
 {
@@ -124,17 +200,18 @@ void ALocalSimulationVolume::PollPhysicsUpdate()
 
 		switch(MeshData->InBodyType)
 		{
-		case ELocalPhysicsBodyType::Static:
-		case ELocalPhysicsBodyType::Dynamic:
-			// update meshes back in 'world' space
-			Mesh.SetWorldLocation(BodyTransform.GetLocation(), false, nullptr, ETeleportType::TeleportPhysics);
-			Mesh.SetWorldRotation(BodyTransform.GetRotation().Rotator(), false, nullptr, ETeleportType::TeleportPhysics);
-			break;
-		case ELocalPhysicsBodyType::Kinematic:
-			// if we are kinematic, we poll updates back into space
-			Handle.SetWorldTransform(Mesh.ComponentToWorld.GetRelativeTransform(LocalSpace->ComponentToWorld));
-			break;
+			case ELocalPhysicsBodyType::Static:
+			case ELocalPhysicsBodyType::Dynamic:
+				// update meshes back in 'world' space
+				Mesh.SetWorldLocation(BodyTransform.GetLocation(), false, nullptr, ETeleportType::TeleportPhysics);
+				Mesh.SetWorldRotation(BodyTransform.GetRotation().Rotator(), false, nullptr, ETeleportType::TeleportPhysics);
+				break;
+			case ELocalPhysicsBodyType::Kinematic:
+				// if we are kinematic, we poll updates back into space
+				Handle.SetWorldTransform(Mesh.ComponentToWorld.GetRelativeTransform(LocalSpace->ComponentToWorld));
+				break;
 		}
+
 		// let's show everything in simulation.
 		if (bShowDebugPhyics)
 		{
@@ -144,15 +221,24 @@ void ALocalSimulationVolume::PollPhysicsUpdate()
 }
 
 
-// Called every frame
-void ALocalSimulationVolume::Tick(float DeltaTime)
+void ALocalSimulationVolume::Update(FPhysScene* PhysScene, uint32 SceneType, float DeltaTime)
 {
-	Super::Tick(DeltaTime);
+	if (SceneType != 0)
+		return;
+	// do any early tick removals
+	DeferredRemoval();
+	// todo: update state of dynamic/static objects - i.e. turning on physics or change of mobility will move an static actor to dynamic.
+	// simulate
+	if (LocalSimulation && LocalSimulation->ShouldSimulate())
+	{
+		LocalSimulation->Simulate(DeltaTime, LocalRotation.RotateVector(LocalSpace->ComponentToWorld.GetRotation().UnrotateVector(Gravity)));
+	}
+	// poll updates to visuals
+	PollPhysicsUpdate();
 }
 
-//DECLARE_EVENT_ThreeParams(USceneComponent, FTransformUpdated, USceneComponent* /*UpdatedComponent*/, EUpdateTransformFlags /*UpdateTransformFlags*/, ETeleportType /*Teleport*/);
 // We listen on Kinematic meshes, as this is called when you SetComponentTransform (and children)
-void ALocalSimulationVolume::TransformUpdated(USceneComponent* InRootComponent, EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport)
+void ALocalSimulationVolume::TransformUpdated(USceneComponent* InRootComponent, EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport) const
 {
 	// presumably, this isn't a physics update. - we want to recieve updates from SetComponentTransform
 	if(Teleport == ETeleportType::None && InRootComponent->Mobility.GetValue() == EComponentMobility::Movable)
@@ -183,6 +269,60 @@ void ALocalSimulationVolume::TransformUpdated(USceneComponent* InRootComponent, 
 				}
 			}
 		}
+	}
+}
+
+// Helpers
+
+LocalPhysics::LocalPhysicJointData* ALocalSimulationVolume::GetDataForJoint(UStaticMeshComponent* MeshOne, UStaticMeshComponent* MeshTwo) const
+{
+	LocalPhysics::LocalPhysicData* MeshDataOne = GetDataForStaticMesh(MeshOne);
+	LocalPhysics::LocalPhysicData* MeshDataTwo = GetDataForStaticMesh(MeshTwo);
+
+	for (LocalPhysicJointData* Joint : JointActors)
+	{
+		if (Joint->Bodies.Contains(MeshDataOne) && Joint->Bodies.Contains(MeshDataTwo))
+		{
+			return Joint;
+		}
+	}
+	return nullptr;
+}
+
+LocalPhysicData* ALocalSimulationVolume::GetDataForStaticMesh(UStaticMeshComponent* Mesh) const
+{
+	for (LocalPhysicData* data : SimulatedActors)
+	{
+		if (data->InVisualMesh == Mesh)
+		{
+			return data;
+		}
+	}
+	return nullptr;
+}
+
+
+bool ALocalSimulationVolume::IsInSimulation(UStaticMeshComponent* Mesh) const
+{
+	if (bool found = GetDataForStaticMesh(Mesh) != nullptr)
+	{
+		return found;
+	}
+	return false;
+}
+
+FConstraintInstance ALocalSimulationVolume::GetConstraintProfile(int Index) const
+{
+	// 0 is the minimum we will take.
+	Index = FPlatformMath::Max(0, Index);
+
+	if (Index < ConstraintProfiles.Num())
+	{
+		return ConstraintProfiles[Index];
+	}
+	else
+	{
+		return FConstraintInstance();
 	}
 }
 
@@ -243,55 +383,54 @@ bool ALocalSimulationVolume::AddStaticMeshToSimulation(UStaticMeshComponent* Mes
 
 		switch (typeOfAdd)
 		{
-		case ELocalPhysicsBodyType::Kinematic:
-			{
-				auto kinematicBody = BodyInstance.GetPxRigidBody_AssumesLocked();
-				if (!kinematicBody)
-					return false;
-				// we are going to listen for transform updates from SetComponentTransform (from the original owner)
-				// I want to say this is still necessary for any updates we get in-between this Actors tick cycle.
-				Mesh->TransformUpdated.AddUObject(this, &ALocalSimulationVolume::TransformUpdated);
-				KinematicActive++;
-				NewMeshData->InHandle = LocalSimulation->CreateKinematicActor(kinematicBody, BodyTransform);
-			}
-			break;
-		case ELocalPhysicsBodyType::Static:
-			{
-				auto staticBody = BodyInstance.GetPxRigidBody_AssumesLocked();
-				if (!staticBody)
-					return false;
-				// add new mesh into simulation 'local' space
-				StaticBodies++;
-				NewMeshData->InHandle = LocalSimulation->CreateKinematicActor(staticBody, BodyTransform);
-			}
-			break;
-		case ELocalPhysicsBodyType::Dynamic:
-			{
-			auto dynamicBody = BodyInstance.GetPxRigidDynamic_AssumesLocked();
-			if (!dynamicBody)
-				return false;
-				DynamicActive++;
-				// preserve linear / angular velocity for 'local' simulating mesh
-				FVector LinearVelocity = Mesh->GetPhysicsLinearVelocity();
-				FVector AngularVelocity = Mesh->GetPhysicsAngularVelocity();
-				// restore linear / angular velocity to 'local' handle of simulating mesh (newHandle), and convert it from 'world' to 'local' space base on this actor transform.
-				// by default, we create clones for kinematic components.
-
-				// add new mesh into simulation 'local' space
-				DynamicMesh->SetSimulatePhysics(false);
-
-				// create dynamic rigidbody, which is expected to simulate.
-				NewMeshData->InHandle = LocalSimulation->CreateDynamicActor(dynamicBody, BodyTransform);
-
-				if (bConvertVelocity)
+			case ELocalPhysicsBodyType::Kinematic:
 				{
-					NewMeshData->InHandle->SetLinearVelocity(LocalRotation.RotateVector(LocalSpace->ComponentToWorld.GetRotation().UnrotateVector(LinearVelocity)));
-					NewMeshData->InHandle->SetAngularVelocity(LocalRotation.RotateVector(LocalSpace->ComponentToWorld.GetRotation().UnrotateVector(AngularVelocity)));
+					auto kinematicBody = BodyInstance.GetPxRigidBody_AssumesLocked();
+					if (!kinematicBody)
+						return false;
+					// we are going to listen for transform updates from SetComponentTransform (from the original owner)
+					// I want to say this is still necessary for any updates we get in-between this Actors tick cycle.
+					Mesh->TransformUpdated.AddUObject(this, &ALocalSimulationVolume::TransformUpdated);
+					KinematicBodies++;
+					NewMeshData->InHandle = LocalSimulation->CreateKinematicActor(kinematicBody, BodyTransform);
 				}
-			}
-			break;
+				break;
+			case ELocalPhysicsBodyType::Static:
+				{
+					auto staticBody = BodyInstance.GetPxRigidBody_AssumesLocked();
+					if (!staticBody)
+						return false;
+					// add new mesh into simulation 'local' space
+					StaticBodies++;
+					NewMeshData->InHandle = LocalSimulation->CreateKinematicActor(staticBody, BodyTransform);
+				}
+				break;
+			case ELocalPhysicsBodyType::Dynamic:
+				{
+				auto dynamicBody = BodyInstance.GetPxRigidDynamic_AssumesLocked();
+				if (!dynamicBody)
+					return false;
+					DynamicBodies++;
+					// preserve linear / angular velocity for 'local' simulating mesh
+					FVector LinearVelocity = Mesh->GetPhysicsLinearVelocity();
+					FVector AngularVelocity = Mesh->GetPhysicsAngularVelocity();
+					// restore linear / angular velocity to 'local' handle of simulating mesh (newHandle), and convert it from 'world' to 'local' space base on this actor transform.
+					// by default, we create clones for kinematic components.
 
-		}
+					// add new mesh into simulation 'local' space
+					DynamicMesh->SetSimulatePhysics(false);
+
+					// create dynamic rigidbody, which is expected to simulate.
+					NewMeshData->InHandle = LocalSimulation->CreateDynamicActor(dynamicBody, BodyTransform);
+
+					if (bConvertVelocity)
+					{
+						NewMeshData->InHandle->SetLinearVelocity(LocalRotation.RotateVector(LocalSpace->ComponentToWorld.GetRotation().UnrotateVector(LinearVelocity)));
+						NewMeshData->InHandle->SetAngularVelocity(LocalRotation.RotateVector(LocalSpace->ComponentToWorld.GetRotation().UnrotateVector(AngularVelocity)));
+					}
+				}
+				break;
+			}
 
 		if(!ShouldExistInBothScenes)
 			BodyInstance.TermBody();
@@ -321,111 +460,21 @@ bool ALocalSimulationVolume::AddConstraintToStaticMeshes(UStaticMeshComponent* M
 		
 		PxD6Joint* PD6Joint = PxD6JointCreate(*GPhysXSDK, nullptr, PxTransform(PxIdentity), nullptr, U2PTransform(ActorTwo->GetWorldTransform().GetRelativeTransform(ActorOne->GetWorldTransform())));
 		
-		ConstraintProfile.ProfileInstance.UpdatePhysX_AssumesLocked(PD6Joint, (ActorOne->GetInverseMass() + ActorTwo->GetInverseMass() / 2), 1.f);
-		
-		newData->JointHandle = LocalSimulation->CreateJoint(PD6Joint, ActorOne, ActorTwo);
+		if(PD6Joint)
+		{
+			ConstraintProfile.ProfileInstance.UpdatePhysX_AssumesLocked(PD6Joint, (ActorOne->GetInverseMass() + ActorTwo->GetInverseMass() / 2), 1.f);
 
-		JointActors.Add(newData);
+			newData->JointHandle = LocalSimulation->CreateJoint(PD6Joint, ActorOne, ActorTwo);
 
-		return true;
+			JointActors.Add(newData);
+
+			return true;
+		}
 	}
 	return false;
 }
 
 // removal
-
-void ALocalSimulationVolume::DeferredRemoval()
-{
-	if (DeferRemovalOfBodies)
-	{
-		for (LocalPhysicJointData* Joint : JointsToRemove)
-		{
-			LocalPhysicJointData* data = Joint;
-
-			LocalSimulation->RemoveJoint(data->JointHandle);
-
-			Joint->Bodies.Empty();
-
-			//todo: delete Joint->JointHandle;
-			Joint->JointHandle = nullptr;
-
-			JointsActive--;
-		}
-		JointsToRemove.Empty();
-		for (LocalPhysicData* data : MeshDataToRemove)
-		{
-			// create pointers to mesh/handle for use later
-			LocalPhysicData* temp = data;
-
-			// visual mesh which we want to restore to
-			UStaticMeshComponent* mesh = temp->InVisualMesh;
-
-			// prep for reference of handle
-			LocalPhysics::FActorHandle* Handle = temp->InHandle;
-
-			// create copy of new position in world
-			const FTransform BodyTransform = Handle->GetWorldTransform() * LocalSpace->ComponentToWorld;
-
-			// store pointer to bodyinstance for later
-			FBodyInstance* BodyInstance = mesh->GetBodyInstance();
-
-			// If we are null, no doppel created. let's initialize body back in world
-			if (temp->InPhysicsMesh == nullptr)
-			{
-				BodyInstance->TermBody();
-				BodyInstance->InitBody(mesh->GetBodySetup(), BodyTransform, mesh, GetWorld()->GetPhysicsScene());
-			}
-
-			switch (temp->InBodyType)
-			{
-			case ELocalPhysicsBodyType::Static:
-				temp->InVisualMesh->SetMobility(EComponentMobility::Static);
-				StaticBodies--;
-				break;
-			case ELocalPhysicsBodyType::Kinematic:
-				temp->InVisualMesh->SetMobility(EComponentMobility::Movable);
-				KinematicActive--;
-				break;
-			case ELocalPhysicsBodyType::Dynamic:
-
-				// preserve linear / angular velocity for 'local' simulating mesh, and convert it to 'world' space
-				FVector LinearVelocity = LocalSpace->ComponentToWorld.GetRotation().RotateVector(LocalRotation.UnrotateVector(Handle->GetLinearVelocity()));
-				FVector AngularVelocity = LocalSpace->ComponentToWorld.GetRotation().RotateVector(LocalRotation.UnrotateVector(Handle->GetAngularVelocity()));
-
-
-				mesh->SetMobility(EComponentMobility::Movable);
-				mesh->SetSimulatePhysics(true);
-				// restore linear / angular velocity
-				if (bConvertVelocity)
-				{
-					mesh->SetPhysicsLinearVelocity(LinearVelocity);
-					mesh->SetPhysicsAngularVelocity(AngularVelocity);
-				}
-				DynamicActive--;
-				break;
-			}
-			LocalSimulation->RemoveActor(Handle);
-			SimulatedActors.Remove(data);
-			delete temp;
-		}
-		// no matter what, clear until new request
-		MeshDataToRemove.Empty();
-		DeferRemovalOfBodies = false;
-	}
-}
-
-
-bool ALocalSimulationVolume::RemoveConstraintFromStaticMeshes(UStaticMeshComponent* MeshOne, UStaticMeshComponent* MeshTwo)
-{
-	LocalPhysics::LocalPhysicJointData* JointData = GetDataForJoint(MeshOne, MeshTwo);
-	if (JointData != nullptr)
-	{
-		JointsToRemove.Add(JointData);
-		DeferRemovalOfBodies = true;
-	}
-	return false;
-}
-
 
 bool ALocalSimulationVolume::RemoveStaticMeshFromSimulation(UStaticMeshComponent* Mesh)
 {
@@ -434,60 +483,22 @@ bool ALocalSimulationVolume::RemoveStaticMeshFromSimulation(UStaticMeshComponent
 		if (DataForRemoval != nullptr && !MeshDataToRemove.Contains(DataForRemoval))
 		{
 			MeshDataToRemove.Add(DataForRemoval);
-			DeferRemovalOfBodies = true;
+			bDeferRemovalOfBodies = true;
 			return true;
 		}
 	}
 	return false;
 }
 
-// Utilities
-
-FConstraintInstance ALocalSimulationVolume::GetConstraintProfile(int Index) const
+bool ALocalSimulationVolume::RemoveConstraintFromStaticMeshes(UStaticMeshComponent* MeshOne, UStaticMeshComponent* MeshTwo)
 {
-	// 0 is the minimum we will take.
-	Index = FPlatformMath::Max(0, Index);
-
-	if (Index < ConstraintProfiles.Num())
+	if(LocalPhysics::LocalPhysicJointData* JointData = GetDataForJoint(MeshOne, MeshTwo))
 	{
-		return ConstraintProfiles[Index];
-	}
-	else
-	{
-		return FConstraintInstance();
-	}
-}
-
-LocalPhysics::LocalPhysicJointData* ALocalSimulationVolume::GetDataForJoint(UStaticMeshComponent* MeshOne, UStaticMeshComponent* MeshTwo) const
-{
-	LocalPhysics::LocalPhysicData* MeshDataOne = GetDataForStaticMesh(MeshOne);
-	LocalPhysics::LocalPhysicData* MeshDataTwo = GetDataForStaticMesh(MeshTwo);
-
-	for (LocalPhysicJointData* Joint : JointActors)
-	{
-		if (Joint->Bodies.Contains(MeshDataOne) && Joint->Bodies.Contains(MeshDataTwo))
+		if (JointData != nullptr)
 		{
-			return Joint;
+			JointsToRemove.Add(JointData);
+			bDeferRemovalOfBodies = true;
 		}
-	}
-	return nullptr;
-}
-
-LocalPhysicData* ALocalSimulationVolume::GetDataForStaticMesh(UStaticMeshComponent* Mesh) const
-{
-	for (LocalPhysicData* data : SimulatedActors)
-	{
-		if (data->InVisualMesh == Mesh)
-			return data;
-	}
-	return nullptr;
-}
-
-bool ALocalSimulationVolume::IsInSimulation(UStaticMeshComponent* Mesh) const
-{
-	if (bool found = GetDataForStaticMesh(Mesh) != nullptr)
-	{
-		return found;
-	}
+	}	
 	return false;
 }
