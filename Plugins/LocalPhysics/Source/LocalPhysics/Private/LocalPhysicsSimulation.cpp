@@ -24,7 +24,7 @@ FLocalSimulation::FLocalSimulation()
 	SimCount = 0;
 }
 
-bool FLocalSimulation::ShouldSimulate() const
+bool FLocalSimulation::HandleAvailableToSimulate() const
 {
 	return (ActorHandles.Num() > 0);
 }

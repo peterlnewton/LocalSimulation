@@ -34,7 +34,7 @@ namespace LocalPhysics
 /** Owns all the data associated with the simulation. Can be considered a single scene or world*/
 struct LOCALPHYSICS_API FLocalSimulation
 {
-	bool ShouldSimulate() const;
+	bool HandleAvailableToSimulate() const;
 public:
 	
 #if WITH_PHYSX

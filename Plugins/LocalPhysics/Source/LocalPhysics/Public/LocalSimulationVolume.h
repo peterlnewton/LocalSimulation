@@ -81,6 +81,11 @@ private:
 	void DeferredRemoval();
 	void PollPhysicsUpdate();
 
+	void RemoveJoints();
+	void RemoveMeshData();
+
+	void UpdateMeshVisuals();
+
 	// Use to simulate along with PhysScene
 	void Update(FPhysScene* PhysScene, uint32 SceneType, float DeltaTime);
 	// Used to update Kinematic actors within Local Simulation
