@@ -349,7 +349,7 @@ FConstraintInstance ALocalSimulationVolume::GetConstraintProfile(int Index) cons
 }
 
 // addition
-
+// todo: refactor this function
 bool ALocalSimulationVolume::AddStaticMeshToSimulation(UStaticMeshComponent* Mesh, bool ShouldExistInBothScenes)
 {
 	bool haveWeAddedMesh = false;

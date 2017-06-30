@@ -5,3 +5,5 @@ Intermediate/*
 *.sln
 Plugins/LocalPhysics/Intermediate/*
 Plugins/LocalPhysics/Binaries/*
+LocalSimulation.VC.VC.opendb
+*.db
