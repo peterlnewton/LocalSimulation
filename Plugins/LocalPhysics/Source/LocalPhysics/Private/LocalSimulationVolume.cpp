@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+// Peter L. Newton - https://twitter.com/peterlnewton
 
 // local includes for Local Sim Plugin
 #include "LocalPhysicsActor.h"
@@ -56,7 +56,7 @@ ALocalSimulationVolume::~ALocalSimulationVolume()
 	for (LocalPhysicJointData* data : JointActors)
 	{
 		auto temp = data;
-
+		//todo: implement appropiate removal of joints from sim
 		//todo: LocalSimulation->RemoveJoint(temp->JointHandle);
 
 		delete temp;
@@ -114,7 +114,7 @@ void ALocalSimulationVolume::DeferredRemoval()
 	//todo: bDeferAdditionOfBodies
 }
 
-void ALocalSimulationVolume::PollPhysicsUpdate()
+void ALocalSimulationVolume::UpdatePhysics()
 {
 	/*
 	*  any polling work physics -> real world update
@@ -122,6 +122,13 @@ void ALocalSimulationVolume::PollPhysicsUpdate()
 	UpdateMeshVisuals();
 	//todo: UpdateSkeletalMeshVisuals();
 }
+
+void ALocalSimulationVolume::SimulatePhysics(float DeltaTime)
+{
+	// todo: update state of dynamic/static objects - i.e. turning on physics or change of mobility will move an static actor to dynamic.
+	LocalSimulation->Simulate(DeltaTime, LocalRotation.RotateVector(LocalSpace->ComponentToWorld.GetRotation().UnrotateVector(Gravity)));
+}
+
 
 void ALocalSimulationVolume::RemoveJoints()
 {
@@ -156,7 +163,7 @@ void ALocalSimulationVolume::RemoveMeshData()
 		LocalPhysics::FActorHandle* Handle = temp->InHandle;
 
 		// create copy of new position in world
-		const FTransform BodyTransform = Handle->GetWorldTransform() * LocalSpace->ComponentToWorld;
+		const FTransform BodyTransform = Handle->GetBodyTransform() * LocalSpace->ComponentToWorld;
 
 		// store pointer to bodyinstance for later
 		FBodyInstance* BodyInstance = VisualMesh->GetBodyInstance();
@@ -213,7 +220,7 @@ void ALocalSimulationVolume::UpdateMeshVisuals()
 		UStaticMeshComponent& Mesh = *MeshData->InVisualMesh;
 		LocalPhysics::FActorHandle& Handle = *MeshData->InHandle;
 
-		FTransform BodyTransform = (Handle.GetWorldTransform() * LocalSpace->ComponentToWorld);
+		FTransform BodyTransform = (Handle.GetBodyTransform() * LocalSpace->ComponentToWorld);
 
 		switch (MeshData->InBodyType)
 		{
@@ -232,7 +239,7 @@ void ALocalSimulationVolume::UpdateMeshVisuals()
 		// let's show everything in simulation.
 		if (bShowDebugPhyics)
 		{
-			UKismetSystemLibrary::DrawDebugBox(GetWorld(), Handle.GetWorldTransform().GetLocation(), Mesh.Bounds.GetBox().GetExtent(), DebugSimulatedColor, Handle.GetWorldTransform().GetRotation().Rotator(), DebugTick, DebugThickness);
+			UKismetSystemLibrary::DrawDebugBox(GetWorld(), (bDebugInWorldSpace ? BodyTransform : Handle.GetBodyTransform()).GetLocation(), Mesh.Bounds.GetBox().GetExtent(), DebugSimulatedColor, (bDebugInWorldSpace ? BodyTransform : Handle.GetBodyTransform()).Rotator(), DebugTick, DebugThickness);
 		}
 	}
 }
@@ -248,15 +255,15 @@ void ALocalSimulationVolume::Update(FPhysScene* PhysScene, uint32 SceneType, flo
 	// don't simulate if we don't have an Actor Handle
 	if (!LocalSimulation->HandleAvailableToSimulate())
 		return;
+	
+	// process simulation data 
+	SimulatePhysics(DeltaTime);
 
 	// do any early tick removals
 	DeferredRemoval();
 	
-	// todo: update state of dynamic/static objects - i.e. turning on physics or change of mobility will move an static actor to dynamic.
-	LocalSimulation->Simulate(DeltaTime, LocalRotation.RotateVector(LocalSpace->ComponentToWorld.GetRotation().UnrotateVector(Gravity)));
-
-	// poll updates to visuals
-	PollPhysicsUpdate();
+	// updates visual geoemtry to match rigidbodies
+	UpdatePhysics();
 }
 
 // We listen on Kinematic meshes, as this is called when you SetComponentTransform (and children)
@@ -281,7 +288,7 @@ void ALocalSimulationVolume::TransformUpdated(USceneComponent* InRootComponent, 
 					// Kinematic update for our physics in 'local' space
 					Handle->SetWorldTransform(Mesh->BodyInstance.GetUnrealWorldTransform_AssumesLocked().GetRelativeTransform(LocalSpace->ComponentToWorld));
 
-					const FTransform BodyTransform = (Handle->GetWorldTransform());
+					const FTransform BodyTransform = (Handle->GetBodyTransform());
 
 					// let's show everything in simulation.
 					if (bShowDebugPhyics)
@@ -350,6 +357,7 @@ FConstraintInstance ALocalSimulationVolume::GetConstraintProfile(int Index) cons
 
 // addition
 // todo: refactor this function
+// todo: fall-back setup / error logs when Mesh already exist, etc edge cases
 bool ALocalSimulationVolume::AddStaticMeshToSimulation(UStaticMeshComponent* Mesh, bool ShouldExistInBothScenes)
 {
 	bool haveWeAddedMesh = false;
@@ -483,7 +491,7 @@ bool ALocalSimulationVolume::AddConstraintToStaticMeshes(UStaticMeshComponent* M
 	{
 		LocalPhysics::LocalPhysicJointData* newData = new LocalPhysicJointData(*LocalSimulation, TArray<LocalPhysics::LocalPhysicData*>{ MeshDataOne, MeshDataTwo }, nullptr, MeshDataOne->InBodyType, MeshDataTwo->InBodyType);
 		
-		PxD6Joint* PD6Joint = PxD6JointCreate(*GPhysXSDK, nullptr, PxTransform(PxIdentity), nullptr, U2PTransform(ActorTwo->GetWorldTransform().GetRelativeTransform(ActorOne->GetWorldTransform())));
+		PxD6Joint* PD6Joint = PxD6JointCreate(*GPhysXSDK, nullptr, PxTransform(PxIdentity), nullptr, U2PTransform(ActorTwo->GetBodyTransform().GetRelativeTransform(ActorOne->GetBodyTransform())));
 		
 		if(PD6Joint)
 		{

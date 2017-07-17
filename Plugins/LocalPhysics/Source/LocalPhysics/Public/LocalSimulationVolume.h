@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+// Peter L. Newton - https://twitter.com/peterlnewton
 
 #pragma once
 
@@ -66,6 +66,29 @@ protected:
 	// Use this to clean up before the actor PhysScene is destroyed
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
+private:
+	void DeferredRemoval();
+	void UpdatePhysics();
+	void SimulatePhysics(float DeltaTime);
+
+	void RemoveJoints();
+	void RemoveMeshData();
+
+	void UpdateMeshVisuals();
+
+	// Use to simulate along with PhysScene
+	void Update(FPhysScene* PhysScene, uint32 SceneType, float DeltaTime);
+
+	// Used to update Kinematic actors within Local Simulation
+	void TransformUpdated(USceneComponent* InRootComponent, EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport) const;
+
+public:
+	LocalPhysics::LocalPhysicData* GetDataForStaticMesh(UStaticMeshComponent* Mesh) const;
+
+	LocalPhysics::LocalPhysicJointData* GetDataForJoint(UStaticMeshComponent* MeshOne, UStaticMeshComponent* MeshTwo) const;
+
+protected:
+
 	TArray<LocalPhysics::LocalPhysicData*> SimulatedActors;
 	TArray<LocalPhysics::LocalPhysicJointData*> JointActors;
 
@@ -78,23 +101,7 @@ private:
 	TArray<LocalPhysics::LocalPhysicJointData*> JointsToRemove;
 	bool bDeferRemovalOfBodies = false;
 
-	void DeferredRemoval();
-	void PollPhysicsUpdate();
-
-	void RemoveJoints();
-	void RemoveMeshData();
-
-	void UpdateMeshVisuals();
-
-	// Use to simulate along with PhysScene
-	void Update(FPhysScene* PhysScene, uint32 SceneType, float DeltaTime);
-	// Used to update Kinematic actors within Local Simulation
-	void TransformUpdated(USceneComponent* InRootComponent, EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport) const;
 public:
-	LocalPhysics::LocalPhysicData* GetDataForStaticMesh(UStaticMeshComponent* Mesh) const;
-
-	LocalPhysics::LocalPhysicJointData* GetDataForJoint(UStaticMeshComponent* MeshOne, UStaticMeshComponent* MeshTwo) const;
-
 	// Check whether this mesh is associated with this space.
 	UFUNCTION(BlueprintCallable, Category = "Local Simulation")
 	bool IsInSimulation(UStaticMeshComponent* Mesh) const;
@@ -151,6 +158,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Local Simulation")
 	bool bShowDebugPhyics = false;
 
+	// Force debug to show in world space rather than local
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Local Simulation")
+	bool bDebugInWorldSpace = false;
+
 	// Should the velocity from the previous space be converted to the new space. (Affects Adding & Removing)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Local Simulation")
 	bool bConvertVelocity = true;
@@ -173,5 +184,4 @@ public:
 	// Define constraints to be used with `RemoveConstraintFromStaticMeshes`
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Local Simulation")
 	TArray<FConstraintInstance> ConstraintProfiles;
-
 };

@@ -1,4 +1,5 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
+// Peter L. Newton - https://twitter.com/peterlnewton
+
 #include "LocalPhysicsActor.h"
 #include "ILocalPhysicsPlugin.h"
 

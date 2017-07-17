@@ -1,4 +1,5 @@
 // Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Peter L. Newton - https://twitter.com/peterlnewton
 #include "LocalPhysicsActor.h"
 #include "LocalPhysicsSimulation.h"
 #include "LocalPhysicsActorHandle.h"
@@ -135,7 +136,7 @@ void FLocalSimulation::RemoveActor(FActorHandle* Handle)
 		PendingAcceleration.RemoveAt(index);
 
 		// do appropaite operation by type
-		switch(temp->typeRef)
+		switch(temp->rigidBodyTypeInt)
 		{
 			case 0:
 				// do nothing
@@ -275,7 +276,7 @@ uint32 FLocalSimulation:: CreateActor(PxRigidActor* RigidActor, const FTransform
 	}
 
 	// very poor way of setitng this up.
-	NewActorHandle->typeRef = (int)ActorType;
+	NewActorHandle->rigidBodyTypeInt = (int)ActorType;
 	return NewActorHandle->ActorDataIndex;
 }
 

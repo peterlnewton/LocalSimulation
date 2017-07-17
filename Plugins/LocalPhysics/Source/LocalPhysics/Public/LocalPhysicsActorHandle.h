@@ -14,7 +14,6 @@ namespace LocalPhysics
 /** handle associated with a physics actor. This is the proper way to read/write to the physics simulation */
 struct LOCALPHYSICS_API FActorHandle
 {
-	int typeRef = -1;
 public:
 	/** Sets the world transform.*/
 	void SetWorldTransform(const FTransform& WorldTM)
@@ -35,6 +34,16 @@ public:
 	{
 #if WITH_PHYSX
 		return ActorToBody.GetRelativeTransformReverse( P2UTransform(OwningSimulation.GetLowLevelBody(ActorDataIndex).body2World) );
+#else
+		return FTransform::Identity;
+#endif
+	}
+
+	/** Get the world transform */
+	FTransform GetBodyTransform() const
+	{
+#if WITH_PHYSX
+		return P2UTransform(OwningSimulation.GetLowLevelBody(ActorDataIndex).body2World);
 #else
 		return FTransform::Identity;
 #endif
@@ -232,6 +241,7 @@ private:
 	FTransform ActorToBody;
 	FLocalSimulation& OwningSimulation;
 	int32 ActorDataIndex;
+	int rigidBodyTypeInt = -1;
 
 	friend FLocalSimulation;
 	FActorHandle(FLocalSimulation& InOwningSimulation, int32 InActorDataIndex)
