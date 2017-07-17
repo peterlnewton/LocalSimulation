@@ -7,7 +7,7 @@ https://www.unrealengine.com/en-US/blog/gdc-2017-making-physics-based-mayhem
 
 Woulnd't be here without their work exposing the API.
 
-I've taken it a step further, and abtracted the implementation through an using Blueprint Actor. Now you can control low level physics with just a few commands in Blueprint. :)
+I've taken it a step further, and abtracted the implementation using a Blueprint Actor. Now you can control low level physics with just a few commands in Blueprint. :)
 
 ## Why
 This was made to allow you to easily ignore world forces for physics simulations i.e. playing catch on a train. Imagine now you can play catch, and the simulation would respond in a way that the world isn't moving at all. Allowing for predictable results in environment that require this behavior.
