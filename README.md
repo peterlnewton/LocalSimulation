@@ -5,7 +5,7 @@
 This was made possible thanks to the work by 4.16 from UE4 Devs new Immediate Physics. 
 https://www.unrealengine.com/en-US/blog/gdc-2017-making-physics-based-mayhem
 
-Woulnd't be here without their work exposing the API.
+Wouldn't be here without their work exposing PhysX API.
 
 I've taken it a step further, and abtracted the implementation using a Blueprint Actor. Now you can control low level physics with just a few commands in Blueprint. :)
 
