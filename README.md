@@ -2,7 +2,8 @@
 
 *Abstraction of Immediate Physx API used to create low cost Physics Simulations within Unreal Engine 4.*
 
-This was made possible thanks to the work by 4.16 from UE4 Devs new Immediate Physcics. https://www.unrealengine.com/en-US/blog/gdc-2017-making-physics-based-mayhem
+This was made possible thanks to the work by 4.16 from UE4 Devs new Immediate Physics. 
+https://www.unrealengine.com/en-US/blog/gdc-2017-making-physics-based-mayhem
 
 Woulnd't be here without their work exposing the API.
 
