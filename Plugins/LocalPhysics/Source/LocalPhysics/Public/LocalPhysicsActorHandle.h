@@ -14,6 +14,16 @@ namespace LocalPhysics
 /** handle associated with a physics actor. This is the proper way to read/write to the physics simulation */
 struct LOCALPHYSICS_API FActorHandle
 {
+
+private:
+	/** Converts from actor space (i.e. the transform in world space as the client gives us) to body space (body with its origin at the COM and oriented to inertia tensor) */
+	FVector ActorScale3D;
+	FTransform ActorToBody;
+	FLocalSimulation& OwningSimulation;
+	int32 ActorDataIndex;
+	int rigidBodyType = -1;
+
+
 public:
 	/** Sets the world transform.*/
 	void SetWorldTransform(const FTransform& WorldTM)
@@ -21,6 +31,7 @@ public:
 #if WITH_PHYSX
 		OwningSimulation.GetLowLevelBody(ActorDataIndex).body2World = U2PTransform(ActorToBody * WorldTM);
 #endif
+		ActorScale3D = WorldTM.GetScale3D();
 	}
 
 	/** Whether the body is simulating */
@@ -33,7 +44,9 @@ public:
 	FTransform GetWorldTransform() const
 	{
 #if WITH_PHYSX
-		return ActorToBody.GetRelativeTransformReverse( P2UTransform(OwningSimulation.GetLowLevelBody(ActorDataIndex).body2World) );
+		auto Transform = ActorToBody.GetRelativeTransformReverse( P2UTransform(OwningSimulation.GetLowLevelBody(ActorDataIndex).body2World) );
+		Transform.SetScale3D(ActorScale3D);
+		return Transform;
 #else
 		return FTransform::Identity;
 #endif
@@ -235,13 +248,6 @@ public:
 		return 0.f
 #endif
 	}
-
-private:
-	/** Converts from actor space (i.e. the transform in world space as the client gives us) to body space (body with its origin at the COM and oriented to inertia tensor) */
-	FTransform ActorToBody;
-	FLocalSimulation& OwningSimulation;
-	int32 ActorDataIndex;
-	int rigidBodyTypeInt = -1;
 
 	friend FLocalSimulation;
 	FActorHandle(FLocalSimulation& InOwningSimulation, int32 InActorDataIndex)

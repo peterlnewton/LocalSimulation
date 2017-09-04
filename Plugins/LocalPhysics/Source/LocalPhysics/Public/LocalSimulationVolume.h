@@ -42,89 +42,25 @@ namespace LocalPhysics
 		LocalPhysics::FLocalSimulation& OwningSimulation;
 		TArray<LocalPhysics::LocalPhysicData*> Bodies;
 		LocalPhysics::FJointHandle* JointHandle;
+		TArray<ELocalPhysicsBodyType> Types;
 		ELocalPhysicsBodyType BodyTypeOne;
 		ELocalPhysicsBodyType BodyTypeTwo;
-		LocalPhysicJointData(LocalPhysics::FLocalSimulation& InSimulation, TArray<LocalPhysics::LocalPhysicData*> NewBodies, LocalPhysics::FJointHandle* Joint, ELocalPhysicsBodyType BodyTypeOne, ELocalPhysicsBodyType BodyTypeTwo)
-		: OwningSimulation(InSimulation), Bodies(NewBodies), JointHandle(Joint), BodyTypeOne(BodyTypeOne), BodyTypeTwo(BodyTypeTwo)
+		LocalPhysicJointData(LocalPhysics::FLocalSimulation& InSimulation, TArray<LocalPhysics::LocalPhysicData*> NewBodies, LocalPhysics::FJointHandle* Joint, TArray<ELocalPhysicsBodyType> Types)
+		: OwningSimulation(InSimulation), Bodies(NewBodies), JointHandle(Joint), Types(Types)
 		{}
 	};
 }
+
+DECLARE_LOG_CATEGORY_EXTERN(LocalSimulationLog, Log, All)
 
 UCLASS(Blueprintable)
 class LOCALPHYSICS_API ALocalSimulationVolume : public AActor
 {
 	GENERATED_BODY()
-	
 public:	
 	// Sets default values for this actor's properties
 	ALocalSimulationVolume();
 	~ALocalSimulationVolume();
-
-protected:
-	// Called when the game starts or when spawned
-	virtual void BeginPlay() override;
-	// Use this to clean up before the actor PhysScene is destroyed
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-
-private:
-	void DeferredRemoval();
-	void UpdatePhysics();
-	void SimulatePhysics(float DeltaTime);
-
-	void RemoveJoints();
-	void RemoveMeshData();
-
-	void UpdateMeshVisuals();
-
-	// Use to simulate along with PhysScene
-	void Update(FPhysScene* PhysScene, uint32 SceneType, float DeltaTime);
-
-	// Used to update Kinematic actors within Local Simulation
-	void TransformUpdated(USceneComponent* InRootComponent, EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport) const;
-
-public:
-	LocalPhysics::LocalPhysicData* GetDataForStaticMesh(UStaticMeshComponent* Mesh) const;
-
-	LocalPhysics::LocalPhysicJointData* GetDataForJoint(UStaticMeshComponent* MeshOne, UStaticMeshComponent* MeshTwo) const;
-
-protected:
-
-	TArray<LocalPhysics::LocalPhysicData*> SimulatedActors;
-	TArray<LocalPhysics::LocalPhysicJointData*> JointActors;
-
-private:
-	FDelegateHandle OnPhysSceneStepHandle;
-
-	LocalPhysics::FLocalSimulation* LocalSimulation;
-
-	TArray<LocalPhysics::LocalPhysicData*> MeshDataToRemove;
-	TArray<LocalPhysics::LocalPhysicJointData*> JointsToRemove;
-	bool bDeferRemovalOfBodies = false;
-
-public:
-	// Check whether this mesh is associated with this space.
-	UFUNCTION(BlueprintCallable, Category = "Local Simulation")
-	bool IsInSimulation(UStaticMeshComponent* Mesh) const;
-
-	// Break constraints associated with these mesh.
-	UFUNCTION(BlueprintCallable, Category = "Local Simulation")
-	FConstraintInstance GetConstraintProfile(int Index) const;
-
-	// Add mesh to this space.
-	UFUNCTION(BlueprintCallable, Category = "Local Simulation")
-	bool AddStaticMeshToSimulation(UStaticMeshComponent* Mesh, bool ShouldExistInBothScenes);
-
-	// Check whether this mesh is associated with this space.
-	UFUNCTION(BlueprintCallable, Category = "Local Simulation")
-	bool AddConstraintToStaticMeshes(UStaticMeshComponent* MeshOne, UStaticMeshComponent* MeshTwo, int ConstraintProfileIndex);
-
-	// Remove mesh from this space.
-	UFUNCTION(BlueprintCallable, Category = "Local Simulation")
-	bool RemoveStaticMeshFromSimulation(UStaticMeshComponent* Mesh);
-
-	// Break constraints associated with these mesh.
-	UFUNCTION(BlueprintCallable, Category = "Local Simulation")
-	bool RemoveConstraintFromStaticMeshes(UStaticMeshComponent* MeshOne, UStaticMeshComponent* MeshTwo);
 
 	// Acts as a editor widget to visualize rotation.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Local Simulation")
@@ -133,11 +69,11 @@ public:
 	// Tracking Static Bodies
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Local Simulation")
 	int StaticBodies = 0;
-	
+
 	// Tracking Kinematic Bodies
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Local Simulation")
 	int KinematicBodies = 0;
-	
+
 	// Tracking Dynamic Bodies
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Local Simulation")
 	int DynamicBodies = 0;
@@ -184,4 +120,67 @@ public:
 	// Define constraints to be used with `RemoveConstraintFromStaticMeshes`
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Local Simulation")
 	TArray<FConstraintInstance> ConstraintProfiles;
+protected:
+
+	TArray<LocalPhysics::LocalPhysicData*> SimulatedActors;
+	TArray<LocalPhysics::LocalPhysicJointData*> JointActors;
+
+private:
+	FDelegateHandle OnPhysSceneStepHandle;
+
+	LocalPhysics::FLocalSimulation* LocalSimulation;
+
+	TArray<LocalPhysics::LocalPhysicData*> MeshDataToRemove;
+	TArray<LocalPhysics::LocalPhysicJointData*> JointsToRemove;
+	bool bDeferRemovalOfBodies = false;
+
+protected:
+	// Called when the game starts or when spawned
+	virtual void BeginPlay() override;
+	// Use this to clean up before the actor PhysScene is destroyed
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+private:
+	void DeferredRemoval();
+	void UpdateComponents();
+	void SimulatePhysics(float DeltaTime);
+
+	void RemoveJoints();
+	void RemoveMeshData();
+
+	void UpdateMeshVisuals();
+
+	// Use to simulate along with PhysScene
+	void Update(FPhysScene* PhysScene, uint32 SceneType, float DeltaTime);
+
+	// Used to update Kinematic actors within Local Simulation
+	void TransformUpdated(USceneComponent* InRootComponent, EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport) const;
+
+public:
+	LocalPhysics::LocalPhysicData* GetDataForStaticMesh(UStaticMeshComponent* Mesh) const;
+	LocalPhysics::LocalPhysicJointData* GetDataForJoint(UStaticMeshComponent* MeshOne, UStaticMeshComponent* MeshTwo) const;
+
+	// Check whether this mesh is associated with this space.
+	UFUNCTION(BlueprintCallable, Category = "Local Simulation")
+	bool IsInSimulation(UStaticMeshComponent* Mesh) const;
+
+	// Break constraints associated with these mesh.
+	UFUNCTION(BlueprintCallable, Category = "Local Simulation")
+	FConstraintInstance GetConstraintProfile(int Index) const;
+
+	// Add mesh to this space.
+	UFUNCTION(BlueprintCallable, Category = "Local Simulation")
+	bool AddStaticMeshToSimulation(UStaticMeshComponent* Mesh, bool ShouldExistInBothScenes);
+
+	// Check whether this mesh is associated with this space.
+	UFUNCTION(BlueprintCallable, Category = "Local Simulation")
+	bool AddConstraintToStaticMeshes(UStaticMeshComponent* MeshOne, UStaticMeshComponent* MeshTwo, int ConstraintProfileIndex);
+
+	// Remove mesh from this space.
+	UFUNCTION(BlueprintCallable, Category = "Local Simulation")
+	bool RemoveStaticMeshFromSimulation(UStaticMeshComponent* Mesh);
+
+	// Break constraints associated with these mesh.
+	UFUNCTION(BlueprintCallable, Category = "Local Simulation")
+	bool RemoveConstraintFromStaticMeshes(UStaticMeshComponent* MeshOne, UStaticMeshComponent* MeshTwo);
 };

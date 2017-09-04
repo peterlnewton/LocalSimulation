@@ -136,7 +136,7 @@ void FLocalSimulation::RemoveActor(FActorHandle* Handle)
 		PendingAcceleration.RemoveAt(index);
 
 		// do appropaite operation by type
-		switch(temp->rigidBodyTypeInt)
+		switch(temp->rigidBodyType)
 		{
 			case 0:
 				// do nothing
@@ -276,7 +276,7 @@ uint32 FLocalSimulation:: CreateActor(PxRigidActor* RigidActor, const FTransform
 	}
 
 	// very poor way of setitng this up.
-	NewActorHandle->rigidBodyTypeInt = (int)ActorType;
+	NewActorHandle->rigidBodyType = (int)ActorType;
 	return NewActorHandle->ActorDataIndex;
 }
 
