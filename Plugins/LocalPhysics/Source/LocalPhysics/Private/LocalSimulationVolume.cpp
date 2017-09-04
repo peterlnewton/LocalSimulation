@@ -224,17 +224,19 @@ void ALocalSimulationVolume::UpdateMeshVisuals()
 		LocalPhysics::FActorHandle& Handle = *MeshData->InHandle;
 		//FTransform HandleTransform = Handle.GetWorldTransform();
 		//HandleTransform.SetScale3D(Mesh.GetComponentTransform().GetScale3D());
+		//const FTransform& BodyTransform = LocalSpace->GetComponentTransform().GetRelativeTransformReverse(Handle.GetWorldTransform());;
+		const FTransform& BodyTransform = Handle.GetWorldTransform() * LocalSpace->GetComponentTransform();
+		//UE_LOG(LocalSimulationLog, Warning, L"New transform: %s is %s", *Mesh.GetStaticMesh()->GetName(), *BodyTransform.ToHumanReadableString());
 
-		const FTransform& BodyTransform = (Handle.GetWorldTransform() * LocalSpace->ComponentToWorld);
-		
 		switch (MeshData->InBodyType)
 		{
 			case ELocalPhysicsBodyType::Static:
 			case ELocalPhysicsBodyType::Dynamic:
 				{
 					// update meshes back in 'world' space
-					Mesh.SetWorldLocation(BodyTransform.GetLocation(),			 false, nullptr, ETeleportType::TeleportPhysics);
-					Mesh.SetWorldRotation(BodyTransform.GetRotation().Rotator(), false, nullptr, ETeleportType::TeleportPhysics);
+					Mesh.SetWorldTransform(BodyTransform, false, nullptr, ETeleportType::TeleportPhysics);
+					//Mesh.SetWorldLocation(BodyTransform.GetLocation(),			 false, nullptr, ETeleportType::TeleportPhysics);
+					//Mesh.SetWorldRotation(BodyTransform.GetRotation().Rotator(), false, nullptr, ETeleportType::TeleportPhysics);
 				}
 				break;
 			case ELocalPhysicsBodyType::Kinematic:
@@ -247,9 +249,9 @@ void ALocalSimulationVolume::UpdateMeshVisuals()
 
 		// let's show everything in simulation.
 		if (bShowDebugPhyics)
-		{
-			const FTransform& DebugTransform = (bDebugInWorldSpace ? BodyTransform : Handle.GetWorldTransform());
-			UKismetSystemLibrary::DrawDebugBox(GetWorld(), DebugTransform.GetLocation(), Mesh.GetStaticMesh()->GetBounds().BoxExtent * Mesh.GetComponentTransform().GetScale3D(), DebugSimulatedColor, DebugTransform.Rotator(), DebugTick, DebugThickness);
+		{ // temporary fix to show local transforms correctly.
+			const FTransform& DebugTransform = (bDebugInWorldSpace ? FTransform(BodyTransform.Rotator(), Mesh.Bounds.Origin, BodyTransform.GetScale3D()) : FTransform(Handle.GetWorldTransform().Rotator(), FTransform(BodyTransform.Rotator(), Mesh.Bounds.Origin, BodyTransform.GetScale3D()).GetRelativeTransform(LocalSpace->ComponentToWorld).GetLocation(), Handle.GetWorldTransform().GetScale3D()));
+			UKismetSystemLibrary::DrawDebugBox(GetWorld(), DebugTransform.GetLocation(), Mesh.GetStaticMesh()->GetBounds().BoxExtent * Handle.ActorScale3D, DebugSimulatedColor, DebugTransform.Rotator(), DebugTick, DebugThickness);
 		}
 	}
 }
@@ -296,19 +298,19 @@ void ALocalSimulationVolume::TransformUpdated(USceneComponent* InRootComponent, 
 			if(LocalPhysicData* MeshData = GetDataForStaticMesh(&Mesh))
 			{
 					// create easy reference for later
-					LocalPhysics::FActorHandle* Handle = MeshData->InHandle;
+					LocalPhysics::FActorHandle& Handle = *MeshData->InHandle;
 
 					const FTransform& WorldBodyTransform = Mesh.GetComponentTransform();
 
 					// Kinematic update for our physics in 'local' space
-					Handle->SetWorldTransform(WorldBodyTransform.GetRelativeTransform(LocalSpace->ComponentToWorld));
+					Handle.SetWorldTransform(WorldBodyTransform.GetRelativeTransform(LocalSpace->ComponentToWorld));
 
 					// let's show everything in simulation.
 					if (bShowDebugPhyics)
 					{
-						const FTransform& BodyTransform = bDebugInWorldSpace ? WorldBodyTransform : Handle->GetWorldTransform();
+						const FTransform& BodyTransform = bDebugInWorldSpace ? WorldBodyTransform : Handle.GetWorldTransform();
 
-						UKismetSystemLibrary::DrawDebugBox(GetWorld(), BodyTransform.GetLocation(), Mesh.GetStaticMesh()->GetBounds().BoxExtent * WorldBodyTransform.GetScale3D(), DebugKinematicColor, BodyTransform.Rotator(), DebugTick, DebugKinematicThickness);
+						UKismetSystemLibrary::DrawDebugBox(GetWorld(), BodyTransform.GetLocation(), Mesh.GetStaticMesh()->GetBounds().BoxExtent * Handle.ActorScale3D, DebugKinematicColor, BodyTransform.Rotator(), DebugTick, DebugKinematicThickness);
 					}
 			}
 		}
@@ -379,9 +381,11 @@ bool ALocalSimulationVolume::AddStaticMeshToSimulation(UStaticMeshComponent* Mes
 	// if we don't find this mesh in Simulated or Kinematic arrays
 	if (IsInSimulation(Mesh) == false)
 	{
+		//UE_LOG(LocalSimulationLog, Warning, L"Current transform: %s is %s", *Mesh->GetStaticMesh()->GetName(), *Mesh->GetComponentTransform().ToHumanReadableString());
 		/*
 		 * messy check for static, kinematic, dynamic
 		 */
+
 		FPhysScene* PhysScene = GetWorld()->GetPhysicsScene();
 		if (PhysScene == nullptr)
 		{
@@ -392,10 +396,12 @@ bool ALocalSimulationVolume::AddStaticMeshToSimulation(UStaticMeshComponent* Mes
 		PxScene* SyncScene = PhysScene->GetPhysXScene(PST_Sync);
 		SCOPED_SCENE_WRITE_LOCK(SyncScene); //SCOPED_SCENE_WRITE_LOCK or SCOPED_SCENE_READ_LOCK if you only need to read
 
-		 // default is Dynamic, other checks will override this default if they're true.
+		// default is Dynamic, other checks will override this default if they're true.
 		ELocalPhysicsBodyType typeOfAdd = ELocalPhysicsBodyType::Dynamic;
+		
 		// check if Kinematic by Component Mobility == Movable && Physics active
-		typeOfAdd = Mesh->Mobility.GetValue() == EComponentMobility::Movable && (Mesh->IsSimulatingPhysics() == false) ? ELocalPhysicsBodyType::Kinematic : typeOfAdd;
+		typeOfAdd = (Mesh->Mobility.GetValue() == EComponentMobility::Movable) && (Mesh->IsSimulatingPhysics() == false) ? ELocalPhysicsBodyType::Kinematic : typeOfAdd;
+		
 		// check if Static by Component Mobility == Static
 		typeOfAdd = Mesh->Mobility.GetValue() == EComponentMobility::Static ? ELocalPhysicsBodyType::Static : typeOfAdd;
 
@@ -406,7 +412,13 @@ bool ALocalSimulationVolume::AddStaticMeshToSimulation(UStaticMeshComponent* Mes
 		FBodyInstance& BodyInstance = Mesh->BodyInstance;
 
 		// create copy of new relative transform
-		FTransform BodyTransform = Mesh->GetComponentTransform().GetRelativeTransform(LocalSpace->GetComponentTransform());
+		FTransform BodyTransform = BodyInstance.GetUnrealWorldTransform_AssumesLocked(false).GetRelativeTransform(LocalSpace->GetComponentTransform());
+		//BodyTransform.SetScale3D(Mesh->GetComponentTransform().GetScale3D());
+		//FTransform BodyTransform = FTransform(Mesh->GetComponentTransform().Rotator(), Mesh->Bounds.Origin, Mesh->GetComponentTransform().GetScale3D()).GetRelativeTransform(LocalSpace->GetComponentTransform());
+		//FTransform BodyTransform = Mesh->GetComponentTransform();
+		//BodyTransform.SetScale3D(FVector(1.f));
+		//BodyTransform = BodyTransform.GetRelativeTransform(LocalSpace->GetComponentTransform());
+
 
 		UStaticMeshComponent* DynamicMesh = NewMeshData->InPhysicsMesh;
 		if(ShouldExistInBothScenes)
@@ -491,6 +503,9 @@ bool ALocalSimulationVolume::AddStaticMeshToSimulation(UStaticMeshComponent* Mes
 			BodyInstance.TermBody();
 		}
 
+		// store scale so that Unreal component gets returned the correct scale / debug looks percise.
+		NewMeshData->InHandle->ActorScale3D = Mesh->GetComponentTransform().GetScale3D();
+
 		// create new pair in kinematic meshses array (we don't update on tick)
 		haveWeAddedMesh = (SimulatedActors.Add(NewMeshData) > -1);
 	}
@@ -518,7 +533,7 @@ bool ALocalSimulationVolume::AddConstraintToStaticMeshes(UStaticMeshComponent* M
 
 		LocalPhysics::LocalPhysicJointData* newData = new LocalPhysicJointData(*LocalSimulation, { MeshDataOne, MeshDataTwo }, nullptr, { MeshDataOne->InBodyType, MeshDataTwo->InBodyType });
 		
-		PxD6Joint* PD6Joint = PxD6JointCreate(*GPhysXSDK, nullptr, PxTransform(PxIdentity), nullptr, U2PTransform(ActorTwo->GetWorldTransform().GetRelativeTransform(ActorOne->GetWorldTransform())));
+		PxD6Joint* PD6Joint = PxD6JointCreate(*GPhysXSDK, nullptr, PxTransform(PxIdentity), nullptr, U2PTransform(ActorTwo->GetBodyTransform().GetRelativeTransform(ActorOne->GetBodyTransform())));
 		
 		if(PD6Joint)
 		{
