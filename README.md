@@ -9,6 +9,10 @@ Wouldn't be here without their work exposing PhysX API.
 
 I've taken it a step further, and abtracted the implementation using a Blueprint Actor. Now you can control low level physics with just a few commands in Blueprint. :)
 
+## Version
+4.17.2 (Planned)
+4.16.2 (Currently)
+
 ## Why
 This was made to allow you to easily ignore world forces for physics simulations i.e. playing catch on a train. Imagine now you can play catch, and the simulation would respond in a way that the world isn't moving at all. Allowing for predictable results in environment that require this behavior.
 
