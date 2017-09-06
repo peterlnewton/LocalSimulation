@@ -16,15 +16,14 @@ struct LOCALPHYSICS_API FActorHandle
 {
 
 private:
-	/** Converts from actor space (i.e. the transform in world space as the client gives us) to body space (body with its origin at the COM and oriented to inertia tensor) */
-	FTransform ActorToBody;
 	FLocalSimulation& OwningSimulation;
-	int32 ActorDataIndex;
-	int rigidBodyType = -1;
-
 
 public:
 	FVector ActorScale3D;
+	/** Converts from actor space (i.e. the transform in world space as the client gives us) to body space (body with its origin at the COM and oriented to inertia tensor) */
+	FTransform ActorToBody;
+	int32 ActorDataIndex;
+	int rigidBodyType = -1;
 
 	/** Sets the world transform.*/
 	void SetWorldTransform(const FTransform& WorldTM)
@@ -45,9 +44,9 @@ public:
 	FTransform GetWorldTransform() const
 	{
 #if WITH_PHYSX
-		auto Transform = ActorToBody.GetRelativeTransformReverse( P2UTransform(OwningSimulation.GetLowLevelBody(ActorDataIndex).body2World) );
-		Transform.SetScale3D(ActorScale3D);
-		return Transform;
+		auto WorldT = ActorToBody.GetRelativeTransformReverse(P2UTransform(OwningSimulation.GetLowLevelBody(ActorDataIndex).body2World));
+		WorldT.SetScale3D(ActorScale3D);
+		return WorldT;
 #else
 		return FTransform::Identity;
 #endif
@@ -57,7 +56,7 @@ public:
 	FTransform GetBodyTransform() const
 	{
 #if WITH_PHYSX
-		return P2UTransform(OwningSimulation.GetLowLevelBody(ActorDataIndex).body2World);
+		return FTransform().GetRelativeTransformReverse(P2UTransform(OwningSimulation.GetLowLevelBody(ActorDataIndex).body2World));
 #else
 		return FTransform::Identity;
 #endif

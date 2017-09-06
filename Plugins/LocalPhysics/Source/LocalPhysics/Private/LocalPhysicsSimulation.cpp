@@ -216,10 +216,8 @@ uint32 FLocalSimulation:: CreateActor(PxRigidActor* RigidActor, const FTransform
 	NewRigidBodyData->maxDepenetrationVelocity = RigidDynamic ? RigidDynamic->getMaxDepenetrationVelocity() : PX_MAX_F32;
 	NewRigidBodyData->invInertia = RigidDynamic ? RigidDynamic->getMassSpaceInvInertiaTensor() : PxVec3(PxZero);
 	NewRigidBodyData->maxContactImpulse = RigidBody ? RigidBody->getMaxContactImpulse() : PX_MAX_F32;
-	
-	NewActorHandle->ActorToBody = RigidBody ? P2UTransform(RigidBody->getCMassLocalPose()) : FTransform::Identity;	//TODO: Why is this an unreal transform?
-	//UE_LOG(LogTemp, Warning, L"ActorToBody: %s", *NewActorHandle->ActorToBody.ToHumanReadableString())
-	NewActorHandle->ActorScale3D = WorldTM.GetScale3D();
+
+	NewActorHandle->ActorToBody = /*RigidBody ? P2UTransform(RigidBody->getCMassLocalPose()) : */FTransform::Identity;	//TODO: Why is this an unreal transform?
 	NewRigidBodyData->body2World = U2PTransform(NewActorHandle->ActorToBody * WorldTM);
 
 	NewRigidBodyData->linearDamping = RigidDynamic ? RigidDynamic->getLinearDamping() : 0.f;
